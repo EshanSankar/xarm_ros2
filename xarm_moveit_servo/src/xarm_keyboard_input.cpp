@@ -29,6 +29,8 @@
 #define KEYCODE_W 0x77
 #define KEYCODE_E 0x65
 #define KEYCODE_R 0x72
+#define KEYCODE_C 0x63
+#define KEYCODE_N 0x6E
 
 KeyboardReader keyboard_reader_;
 
@@ -63,6 +65,7 @@ linear_pos_cmd_(0.5)
     // Setup pub/sub
     twist_pub_ = node_->create_publisher<geometry_msgs::msg::TwistStamped>(cartesian_command_in_topic_, ros_queue_size_);
     joint_pub_ = node_->create_publisher<control_msgs::msg::JointJog>(joint_command_in_topic_, ros_queue_size_);
+    resolution_pub_ = node_->create_publisher<std_msgs::msg::Int8>("/orchestrator/resolution", ros_queue_size_);
     // collision_pub_ = node_->create_publisher<moveit_msgs::msg::PlanningScene>("/planning_scene", 10);
 
     // Create a service client to start the ServoServer
@@ -110,6 +113,8 @@ void KeyboardServoPub::keyLoop()
     char c;
     bool publish_twist = false;
     bool publish_joint = false;
+    bool publish_resolution = false;
+    int resolution = 0;
 
     std::thread{ std::bind(&KeyboardServoPub::spin, this) }.detach();
 
@@ -118,6 +123,7 @@ void KeyboardServoPub::keyLoop()
     puts("Use arrow keys and the '.' and ';' keys to Cartesian jog");
     puts("Use 'W' to Cartesian jog in the world frame, and 'E' for the End-Effector frame");
     puts("Use 1|2|3|4|5|6|7 keys to joint jog. 'R' to reverse the direction of jogging.");
+    puts("Orchestrator Controls: 'C' to continue current action. 'N' to continue next action.");
     puts("'Q' to quit.");
     
     for (;;) {
@@ -132,6 +138,7 @@ void KeyboardServoPub::keyLoop()
 
         auto twist_msg = std::make_unique<geometry_msgs::msg::TwistStamped>();
         auto joint_msg = std::make_unique<control_msgs::msg::JointJog>();
+        auto resolution_msg = std::make_unique<std_msgs::msg::Int8>();
 
         // Use read key-press
         switch (c)
@@ -220,6 +227,16 @@ void KeyboardServoPub::keyLoop()
             RCLCPP_DEBUG(node_->get_logger(), "R");
             joint_vel_cmd_ *= -1;
             break;
+        case KEYCODE_C:
+            RCLCPP_DEBUG(node_->get_logger(), "current");
+            resolution = 0;
+            publish_resolution = true;
+            break;
+        case KEYCODE_N:
+            RCLCPP_DEBUG(node_->get_logger(), "next");
+            resolution = 1;
+            publish_resolution = true;
+            break;
         case KEYCODE_Q:
             RCLCPP_DEBUG(node_->get_logger(), "quit");
             return;
@@ -239,6 +256,13 @@ void KeyboardServoPub::keyLoop()
             joint_msg->header.frame_id = "joint";
             joint_pub_->publish(std::move(joint_msg));
             publish_joint = false;
+        }
+        else if (publish_resolution)
+        {
+            resolution_msg->data = resolution;
+            resolution_pub_->publish(std::move(resolution_msg));
+            publish_resolution = false;
+            return;
         }
     }
 }
